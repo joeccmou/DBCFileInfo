@@ -22,6 +22,11 @@ DBCFileInfoProcess::~DBCFileInfoProcess()
 
 }
 
+bool DBCFileInfoProcess::IsFileOpen()
+{
+	return m_File.is_open();
+}
+
 
 UINT   DBCFileInfoProcess::OpenFile()
 {
@@ -40,6 +45,11 @@ UINT   DBCFileInfoProcess::OpenFile()
 	m_strFileName = strFileName;
 	m_strFilePathName = strFilePathName;
 
+	if (m_File.is_open())
+	{
+		m_File.close();
+	}
+
 	m_File.open(strFilePathName, ifstream::in);
 	if (!m_File.is_open())
 	{
@@ -47,8 +57,6 @@ UINT   DBCFileInfoProcess::OpenFile()
 	}
 
 	AnalyzeDBCFileInfo();
-
-	m_File.close();
 
 	return 0;
 
@@ -65,7 +73,7 @@ void  DBCFileInfoProcess::AnalyzeDBCFileInfo()
 	SignalInfo_t	SignalInfo = {0};
 
 	/*Analyze from the beginning of the file*/
-	m_File.seekg(ifstream::beg);
+	m_File.seekg(0);
 	m_mapMessages.clear();
 	m_mapSignals.clear();
 		
@@ -173,11 +181,11 @@ void  DBCFileInfoProcess::AnalyzeDBCFileInfo()
 					strRestToken2 = strRestToken2.Mid(1);
 					if ( !strRestToken2.IsEmpty() && _istdigit(strRestToken2[0]) )
 					{
-						SignalInfo.iMultiValue = _tcstoul(strRestToken2, NULL, 10);	//What Multiplexed Value this signal belongs to
+						SignalInfo.iMultiplexor = _tcstoul(strRestToken2, NULL, 10);	//What Multiplexed Value this signal belongs to
 					}
 					else
 					{
-						SignalInfo.iMultiValue = -1;		//This signal is the Multiplexed Message Flag signal
+						SignalInfo.iMultiplexor = -1;		//This signal gives the infomation for multiplexing
 					}
 				}
 
@@ -295,10 +303,12 @@ void DBCFileInfoProcess::InitSignalInfo(SignalInfo_t* pSignalInfo)
 	pSignalInfo->fMinValue = 0;
 	pSignalInfo->fOffset = 0;
 	pSignalInfo->fScale = 0;
-	pSignalInfo->iMultiValue = 0;
+	pSignalInfo->iMultiplexor = 0;
 	pSignalInfo->u32StartBit = 0;
 	pSignalInfo->u8Length = 0;
 	pSignalInfo->strSignalName.Empty();
+
+	pSignalInfo->u64RawInitValue = 0;
 }
 
 void DBCFileInfoProcess::InitMessageInfo(MessageInfo_t* pMessageInfo)
@@ -306,4 +316,227 @@ void DBCFileInfoProcess::InitMessageInfo(MessageInfo_t* pMessageInfo)
 	pMessageInfo->strMsgName.Empty();
 	pMessageInfo->u32MsgID = 0;
 	pMessageInfo->u8DLC = 0;
+}
+
+
+void DBCFileInfoProcess::OutputInitializationCode_CLanguage(vector<UINT32> selected_messages)
+{
+	int				i = 0, iPosFile = 0, iPosString = 0;
+	char			buf[2048] = { 0 };
+	CString         strCurLine = _T(""), strGetSigStartValue = _T(""), strRawInitValue = _T("");
+	CString         strMsgDef = _T(""), strSignalRawType = _T(""), strMsgName=_T("");
+	CString         strMessageVar = _T(""), strEquation = _T(""), strSignalName = _T(""), strInitFunction = _T("");
+	UINT64          u64RawInitValue = 0;
+	
+	size_t			msg_number = selected_messages.size();
+
+	/*Get the position of starting point of the <BA_ XXX>*/
+	m_File.clear();
+	m_File.seekg(0);
+
+	do
+	{
+		int iTempPosFile = m_File.tellg();
+		m_File.getline(buf, 2048);
+		strCurLine = buf;
+		iPosString = strCurLine.Find(_T("BA_ "));
+		if (iPosString == 0)
+		{		
+			iPosFile = iTempPosFile;
+			break;
+		}
+
+	} while (!m_File.eof() && !m_File.fail());
+
+	ASSERT(!m_File.eof() && !m_File.fail());
+	
+
+	strMsgDef = _T("/*****************  The following is the message structure **********************/\n");
+	strMessageVar = _T("/*****************  The following is the message variable **********************/\n");
+	strInitFunction = _T("/*****************  The following is the message initialization definition**********************/\n");
+
+	for (i = 0; i < msg_number; i++)
+	{
+		int    j = 0;
+		size_t signal_number = m_mapSignals.count(selected_messages[i]);
+
+		ASSERT(signal_number>0);		
+
+		strMsgDef.AppendFormat(CONST_STRING_TYPEDEF_STRUCT);
+
+		for (auto it = m_mapSignals.find(selected_messages[i]); j<signal_number && it != m_mapSignals.end() ; it++,j++)
+		{
+			
+			m_File.clear();
+			m_File.seekg(iPosFile);
+			
+			/*Define the message structure*/
+			strSignalRawType = GetSignalRawType(it->second);
+			strMsgDef.AppendFormat(_T("%s	%s;\n"), strSignalRawType.GetString(), it->second.strSignalName.GetString());
+			
+			do
+			{	/*Search the GenSigStartValue keyword to get initial value for selected messages*/
+				m_File.getline(buf, 2048);
+				strCurLine = buf;
+
+				if (strCurLine.Find(_T("BA_ ")) != 0)
+				{	
+					break;
+				}
+				
+				strGetSigStartValue.Format(_T("BA_ \"GenSigStartValue\" SG_ %d %s "), it->first, it->second.strSignalName.GetString());
+				iPosString = strCurLine.Find(strGetSigStartValue);
+				if (iPosString == 0)
+				{	/*This Signal has User-defined Initial Value*/
+					strRawInitValue = strCurLine.Mid(strGetSigStartValue.GetLength());
+					strRawInitValue.TrimRight(_T(';'));
+					u64RawInitValue = _tcstoui64(strRawInitValue, NULL, 10);
+					it->second.u64RawInitValue = u64RawInitValue;
+					break;
+				}
+
+			} while (!m_File.eof() && !m_File.fail());
+
+		}
+		strMsgName = m_mapMessages[selected_messages[i]].strMsgName;
+		strMsgDef.AppendFormat(_T("}%s_t;\n\n"), strMsgName.GetString());
+
+		/*Define message variables*/
+		strMessageVar.AppendFormat(_T("%s_t\t%s;\n"), strMsgName, strMsgName);
+	}
+	strMessageVar += _T("\n");
+	
+	
+	strInitFunction += CONST_STRING_INITIAL_FUNCTION_NAME;
+	/*Output the initial value*/
+	for (i = 0; i < msg_number; i++)
+	{
+		int    j = 0;
+		size_t signal_number = m_mapSignals.count(selected_messages[i]);
+
+		ASSERT(signal_number>0);
+
+		/*1. Get message name*/
+		strMsgName = m_mapMessages[selected_messages[i]].strMsgName;
+		strInitFunction.AppendFormat(_T("\t/**********%s************/\n"), strMsgName);
+		for (auto it = m_mapSignals.find(selected_messages[i]); j<signal_number && it != m_mapSignals.end(); it++, j++)
+		{
+			/*2. Get signal name and signal initial value*/
+			strEquation.Format(_T("\t%s.%s=0x%x;\n"), strMsgName, it->second.strSignalName, it->second.u64RawInitValue);
+			strInitFunction += strEquation;
+		}	
+		strInitFunction += _T("\n");
+	}
+	strInitFunction.AppendFormat(_T("}\n"));
+
+
+	
+	CFile f;
+	CFileException e;
+
+	ASSERT(!m_strFileName.IsEmpty());
+	CString strFileName = m_strFilePathName;
+
+	int iPos = strFileName.Replace(_T(".dbc"),_T("(init).c"));
+	ASSERT(iPos == 1);
+
+	if (!f.Open(strFileName, CFile::modeCreate | CFile::modeWrite, &e))
+	{
+		TRACE(_T("File could not be opened %d\n"), e.m_cause);
+	}
+
+	/*Output message structure definition*/
+#ifdef _UNICODE
+	size_t size = strMsgDef.GetLength()*2;
+#else
+	size_t size = strMsgDef.GetLength();
+#endif
+	f.Write(strMsgDef.GetString(), size);
+
+	/*Output message variable definition*/
+#ifdef _UNICODE
+	size = strMessageVar.GetLength() * 2;
+#else
+	size = strMessageVar.GetLength();
+#endif
+	f.Write(strMessageVar.GetString(), size);
+
+	/*Output message initialization function definition*/
+#ifdef _UNICODE
+	size = strInitFunction.GetLength() * 2;
+#else
+	size = strInitFunction.GetLength();
+#endif	
+	f.Write(strInitFunction.GetString(), size);
+	
+	f.Flush();
+	f.Close();
+
+}
+
+CString DBCFileInfoProcess::GetSignalRawType(SignalInfo_t signal_info)
+{
+	CString strSignalRawType = _T("");
+
+	if (signal_info.u8Length == 1)
+	{
+		strSignalRawType = _T("BOOL");
+	}
+	else if (1 < signal_info.u8Length )
+	{
+		if (signal_info.bIsSigned)
+		{
+			if (signal_info.u8Length <=8 )
+			{
+				strSignalRawType = _T("int8_t");
+			}
+			else if (signal_info.u8Length <= 16)
+			{
+				strSignalRawType = _T("int16_t");
+			}
+			else if (signal_info.u8Length <= 32)
+			{
+				strSignalRawType = _T("int32_t");
+			}
+			else if (signal_info.u8Length <= 64)
+			{
+				strSignalRawType = _T("int64_t");
+			}
+			else
+			{
+				CString   strErr;
+				strErr.Format(_T("Sorry, but it has no ability to process signals that is larger than 64 bits.\nSignalName = %s\nbitlength = %d"), signal_info.strSignalName, signal_info.u8Length);
+				MessageBox(NULL,strErr,_T("error"), MB_OK);
+			}
+		}
+		else
+		{
+			if (signal_info.u8Length <= 8)
+			{
+				strSignalRawType = _T("uint8_t");
+			}
+			else if (signal_info.u8Length <= 16)
+			{
+				strSignalRawType = _T("uint16_t");
+			}
+			else if (signal_info.u8Length <= 32)
+			{
+				strSignalRawType = _T("uint32_t");
+			}
+			else if (signal_info.u8Length <= 64)
+			{
+				strSignalRawType = _T("uint64_t");
+			}
+			else
+			{
+				CString   strErr;
+				strErr.Format(_T("Sorry, but it has no ability to process signals that is larger than 64 bits.\nSignalName = %s\nbitlength = %d"), signal_info.strSignalName, signal_info.u8Length);
+				MessageBox(NULL, strErr, _T("error"), MB_OK);
+			}
+		}
+
+	}
+
+	return strSignalRawType;
+	
 }

@@ -8,6 +8,10 @@ using namespace std;
 
 #define USE_VECTOR 0
 
+#define CONST_STRING_TYPEDEF_STRUCT		_T("typedef struct {\n") 
+
+#define CONST_STRING_INITIAL_FUNCTION_NAME   _T("void InitializeMessages(void)\n{\n")
+
 enum enum_FILE_ACCESS_FAILURE_t
 {
 	FILE_ACCESS_FAILURE_NOT_OPEN	=	1,
@@ -29,7 +33,7 @@ typedef struct {
 
 	CString         strSignalName;
 	BOOL 			bIsMulti;
-	INT8            iMultiValue;	//Only valid when bIsMulti=TRUE	
+	INT8            iMultiplexor;	//Only valid when bIsMulti=TRUE	
 	UINT32          u32StartBit;
 	UINT8           u8Length;
 	BOOL            bEndian;
@@ -39,6 +43,8 @@ typedef struct {
 	float           fOffset;
 	float           fMinValue;
 	float           fMaxValue;
+
+	UINT64          u64RawInitValue;
 
 
 }SignalInfo_t;
@@ -67,10 +73,16 @@ public:
 	virtual ~DBCFileInfoProcess();
 
 	UINT  OpenFile();
+	bool  IsFileOpen();
 	void  AnalyzeDBCFileInfo();
+	
+	CString GetSignalRawType(SignalInfo_t signal_info);
 
 	void	InitSignalInfo(SignalInfo_t* pSignalInfo);
 	void	InitMessageInfo(MessageInfo_t* pMessageInfo);
+
+
+	void	OutputInitializationCode_CLanguage(vector<UINT32> SelectedMessages);
 
 };
 
