@@ -14,8 +14,7 @@ Feel free to download the project and modify it as you like. But notice that the
 	> OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 # Release Note
-Date: 2019/3/20 22:10:03 
-Revision: 73372d2e7c4a64bf8303efaba855bc4b19aacfc5
+Date: 2019/3/20 22:10:03   
 the automatic code generation function works. Only for Intel order(little endian) right now.
 
 	
