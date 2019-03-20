@@ -12,10 +12,26 @@ Feel free to download the project and modify it as you like. But notice that the
 	> CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
 	> OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 	> OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+# Release Note
+Date: 2019/3/20 22:10:03 
+Revision: 73372d2e7c4a64bf8303efaba855bc4b19aacfc5
+the automatic code generation function works. Only for Intel order(little endian) right now.
+
 	
-	
-# User Guidance:
+# User Guidance
 1. Output Message Structure and Initialization Function
 	> step1: click "File"-->"Open..." to open a .dbc file
 	>  
-	> step2: click "Output"-->"Initialization Code"-->"C language", the .c source file will be output to the path where the dbc file is located
+	> step2: click "Output"-->"Source Code (Initialize Signals)"-->"C language", the XXX(init).c source file will be output to the path where the dbc file is located
+	
+2. Output Read Message Function
+	> step1: click "File"-->"Open..." to open a .dbc file
+	>  
+	> step2: click "Output"-->"Source Code (Read Signals)"-->"C language", the XXX(Read).c source file will be output to the path where the dbc file is located	
+	
+3. Output Write Message Function
+	> step1: click "File"-->"Open..." to open a .dbc file
+	>  
+	> step2: click "Output"-->"Source Code (Write Signals)"-->"C language", the XXX(Write).c source file will be output to the path where the dbc file is located	
+	
