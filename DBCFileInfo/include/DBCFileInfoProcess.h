@@ -3,6 +3,7 @@
 #include <fstream>
 #include <map>
 #include <vector>
+#include <set>
 
 using namespace std;
 
@@ -11,6 +12,8 @@ using namespace std;
 #define CONST_STRING_TYPEDEF_STRUCT		_T("typedef struct {\n") 
 
 #define CONST_STRING_INITIAL_FUNCTION_NAME   _T("void InitializeMessages(void)\n{\n")
+#define CONST_STRING_READ_FUNCTION_NAME   _T("void ReadMessages(void)\n{\n")
+#define CONST_STRING_WRITE_FUNCTION_NAME   _T("void WriteMessages(void)\n{\n")
 
 enum enum_FILE_ACCESS_FAILURE_t
 {
@@ -18,6 +21,14 @@ enum enum_FILE_ACCESS_FAILURE_t
 	FILE_ACCESS_FAILURE_USER_CANCEL	=	2
 };
 
+/*we devide a signal into segments, SegmentInfo_t contains the location of each segment */
+typedef struct {
+
+	UINT16			u16_ByteOffset;
+	UINT8           u8_BitOffset;
+	UINT8           u8_SegmentLen;
+
+}SegmentInfo_t;
 
 
 typedef struct {
@@ -25,7 +36,9 @@ typedef struct {
 	UINT32			u32MsgID;
 	CString         strMsgName;
 	UINT8           u8DLC;
-
+	         
+	std::set<INT16>	set_Multiplexor;
+	CString         str_MuxSignalName;
 }MessageInfo_t;
 
 
@@ -33,10 +46,10 @@ typedef struct {
 
 	CString         strSignalName;
 	BOOL 			bIsMulti;
-	INT8            iMultiplexor;	//Only valid when bIsMulti=TRUE	
+	INT16           iMultiplexor;	//Only valid when bIsMulti=TRUE	
 	UINT32          u32StartBit;
 	UINT8           u8Length;
-	BOOL            bEndian;
+	BOOL            bEndian;   //0: Motorola  1:Intel
 	BOOL            bIsSigned;
 
 	float           fScale;
@@ -46,6 +59,7 @@ typedef struct {
 
 	UINT64          u64RawInitValue;
 
+	std::vector<SegmentInfo_t>  mvector_SegmentInfo;
 
 }SignalInfo_t;
 
@@ -64,9 +78,9 @@ public:
 #if USE_VECTOR
 	vector<MessageInfo_t>				m_vecMessages;
 #else
-	map<UINT32, MessageInfo_t>			m_mapMessages;
+	map<UINT32, MessageInfo_t>			m_mapMessages;  //MsgID-->MsgInfo
 #endif
-	multimap<UINT32, SignalInfo_t>		m_mapSignals;
+	multimap<UINT32, SignalInfo_t>		m_mapSignals;   //MsgID-->SignalInfo
 
 public:
 	DBCFileInfoProcess();
@@ -82,7 +96,9 @@ public:
 	void	InitMessageInfo(MessageInfo_t* pMessageInfo);
 
 
-	void	OutputInitializationCode_CLanguage(vector<UINT32> SelectedMessages);
+	void	InitializeSignal_CLanguage(vector<UINT32> SelectedMessages);   //the initialization code in C language
+	void    ReadSignal_CLanguage(vector<UINT32> selected_messages);  //the code that reads memory buffer into signals in C language
+	void    WriteSignal_CLanguage(vector<UINT32> selected_messages);
 
 };
 
