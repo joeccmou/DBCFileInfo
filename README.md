@@ -17,6 +17,8 @@ Feel free to download the project and modify it as you like. But notice that the
 Date: 2019/3/20 22:10:03   
 the automatic code generation function works. Only for Intel order(little endian) right now.
 
+Date: 2019/3/21 21:11:16   
+add support for motorola order. now, all the signals can be automatically converted to C languange program
 	
 # User Guidance
 1. Output Message Structure and Initialization Function

@@ -719,85 +719,45 @@ void DBCFileInfoProcess::ReadSignal_CLanguage(vector<UINT32> selected_messages)
 			}
 			
 
-			if (it->second.bEndian == 1)  //Intel Order
-			{
-				u8_Left_Offset = 0;
+			
+			u8_Left_Offset = 0;
 				
-				for (k = 0; k < u_Size; k++)
+			for (k = 0; k < u_Size; k++)
+			{
+				/*calculate the bit mask*/
+				u8_Mask = 0;
+				for (n = 0; n < vector_SegmentInfo[k].u8_SegmentLen; n++)
 				{
-					/*calculate the bit mask*/
-					u8_Mask = 0;
-					for (n = 0; n < vector_SegmentInfo[k].u8_SegmentLen; n++)
+					u8_Mask |= (1 << n);
+				}
+				u8_Mask = u8_Mask << vector_SegmentInfo[k].u8_BitOffset;
+				/*figure out one segment of the signal*/
+				if (k == 0)
+				{
+					if (str_SignalRawType == _T("BOOL"))
 					{
-						u8_Mask |= (1 << n);
-					}
-					u8_Mask = u8_Mask << vector_SegmentInfo[k].u8_BitOffset;
-					/*figure out one segment of the signal*/
-					if (k == 0)
-					{
-						if (str_SignalRawType == _T("BOOL"))
-						{
-							str_ReadSegment.Format(_T("(%s_buf[%d]&0x%02x)>>%d"), m_mapMessages[selected_messages[i]].strMsgName,
-								vector_SegmentInfo[k].u16_ByteOffset, u8_Mask, vector_SegmentInfo[k].u8_BitOffset);
-						}
-						else
-						{
-							str_ReadSegment.Format(_T("((%s)(%s_buf[%d]&0x%02x)>>%d)"), str_SignalRawType, m_mapMessages[selected_messages[i]].strMsgName,
-								vector_SegmentInfo[k].u16_ByteOffset, u8_Mask, vector_SegmentInfo[k].u8_BitOffset);
-							u8_Left_Offset += vector_SegmentInfo[k].u8_SegmentLen;
-						}
+						str_ReadSegment.Format(_T("(%s_buf[%d]&0x%02x)>>%d"), m_mapMessages[selected_messages[i]].strMsgName,
+							vector_SegmentInfo[k].u16_ByteOffset, u8_Mask, vector_SegmentInfo[k].u8_BitOffset);
 					}
 					else
 					{
-						ASSERT(str_SignalRawType != _T("BOOL"));
-						str_ReadSegment.Format(_T(" | ((%s)(%s_buf[%d]&0x%02x)<<%d)"), str_SignalRawType, m_mapMessages[selected_messages[i]].strMsgName, 
-							vector_SegmentInfo[k].u16_ByteOffset,u8_Mask, u8_Left_Offset);
+						str_ReadSegment.Format(_T("((%s)(%s_buf[%d]&0x%02x)>>%d)"), str_SignalRawType, m_mapMessages[selected_messages[i]].strMsgName,
+							vector_SegmentInfo[k].u16_ByteOffset, u8_Mask, vector_SegmentInfo[k].u8_BitOffset);
 						u8_Left_Offset += vector_SegmentInfo[k].u8_SegmentLen;
 					}
-					/*combine the segments together*/
-					str_ReadSignal += str_ReadSegment;  
 				}
-				
-			}
-			else if (it->second.bEndian == 0)	//Motorola Order
-			{
-				u8_Left_Offset = 0;
-
-				for (k = 0; k < u_Size; k++)
+				else
 				{
-					/*calculate the bit mask*/
-					u8_Mask = 0;
-					for (n = 0; n < vector_SegmentInfo[k].u8_SegmentLen; n++)
-					{
-						u8_Mask |= (1 << n);
-					}
-					u8_Mask = u8_Mask << vector_SegmentInfo[k].u8_BitOffset;
-					/*figure out one segment of the signal*/
-					if (k == 0)
-					{
-						if (str_SignalRawType == _T("BOOL"))
-						{
-							str_ReadSegment.Format(_T("(%s_buf[%d]&0x%02x)>>%d"), m_mapMessages[selected_messages[i]].strMsgName,
-								vector_SegmentInfo[k].u16_ByteOffset, u8_Mask, vector_SegmentInfo[k].u8_BitOffset);
-						}
-						else
-						{
-							str_ReadSegment.Format(_T("((%s)(%s_buf[%d]&0x%02x)>>%d)"), str_SignalRawType, m_mapMessages[selected_messages[i]].strMsgName,
-								vector_SegmentInfo[k].u16_ByteOffset, u8_Mask, vector_SegmentInfo[k].u8_BitOffset);
-							u8_Left_Offset += vector_SegmentInfo[k].u8_SegmentLen;
-						}
-					}
-					else
-					{
-						ASSERT(str_SignalRawType != _T("BOOL"));
-						str_ReadSegment.Format(_T(" | ((%s)(%s_buf[%d]&0x%02x)<<%d)"), str_SignalRawType, m_mapMessages[selected_messages[i]].strMsgName,
-							vector_SegmentInfo[k].u16_ByteOffset, u8_Mask, u8_Left_Offset);
-						u8_Left_Offset += vector_SegmentInfo[k].u8_SegmentLen;
-					}
-					/*combine the segments together*/
-					str_ReadSignal += str_ReadSegment;
+					ASSERT(str_SignalRawType != _T("BOOL"));
+					str_ReadSegment.Format(_T(" | ((%s)(%s_buf[%d]&0x%02x)<<%d)"), str_SignalRawType, m_mapMessages[selected_messages[i]].strMsgName, 
+						vector_SegmentInfo[k].u16_ByteOffset,u8_Mask, u8_Left_Offset);
+					u8_Left_Offset += vector_SegmentInfo[k].u8_SegmentLen;
 				}
+				/*combine the segments together*/
+				str_ReadSignal += str_ReadSegment;  
 			}
+				
+			
 			str_ReadSignal += _T(";");
 
 			/*¡øprocess for each message that has multiplexing signals */
@@ -984,83 +944,42 @@ void DBCFileInfoProcess::WriteSignal_CLanguage(vector<UINT32> selected_messages)
 				}
 
 				/*construct a segment of the buffer*/
-				if (it->second.bEndian == 1)  //Intel Order
+			
+				/*calculate the bit mask*/
+				u8_Mask = 0;
+				for (n = 0; n < vector_SegmentInfo[k].u8_SegmentLen; n++)
 				{
-					/*calculate the bit mask*/
-					u8_Mask = 0;
-					for (n = 0; n < vector_SegmentInfo[k].u8_SegmentLen; n++)
+					u8_Mask |= (1 << n);
+				}
+				u8_Mask = u8_Mask << vector_SegmentInfo[k].u8_BitOffset;
+
+				if (segment_count == 0)
+				{
+					if (str_SignalRawType == _T("BOOL"))
 					{
-						u8_Mask |= (1 << n);
-					}
-					u8_Mask = u8_Mask << vector_SegmentInfo[k].u8_BitOffset;
-						
-					if (segment_count == 0)
-					{
-						if (str_SignalRawType == _T("BOOL"))
-						{
-							str_WriteSegment.Format(_T("(((uint8_t)%s.%s<<%d)&0x%02x)"), m_mapMessages[selected_messages[i]].strMsgName, it->second.strSignalName,
-								vector_SegmentInfo[k].u8_BitOffset, u8_Mask);
-						}
-						else
-						{
-							str_WriteSegment.Format(_T("(((uint8_t)(%s.%s>>%d)<<%d)&0x%02x)"), m_mapMessages[selected_messages[i]].strMsgName,
-								it->second.strSignalName, u8_Right_Offset, vector_SegmentInfo[k].u8_BitOffset, u8_Mask);
-						}
+						str_WriteSegment.Format(_T("(((uint8_t)%s.%s<<%d)&0x%02x)"), m_mapMessages[selected_messages[i]].strMsgName, it->second.strSignalName,
+							vector_SegmentInfo[k].u8_BitOffset, u8_Mask);
 					}
 					else
 					{
-						if (str_SignalRawType == _T("BOOL"))
-						{
-							str_WriteSegment.Format(_T(" | (((uint8_t)%s.%s<<%d)&0x%02x)"), m_mapMessages[selected_messages[i]].strMsgName, it->second.strSignalName,
-								vector_SegmentInfo[k].u8_BitOffset, u8_Mask);
-						}
-						else
-						{
-							str_WriteSegment.Format(_T(" | (((uint8_t)(%s.%s>>%d)<<%d)&0x%02x)"), m_mapMessages[selected_messages[i]].strMsgName,
-								it->second.strSignalName, u8_Right_Offset, vector_SegmentInfo[k].u8_BitOffset, u8_Mask);
-						}
-
+						str_WriteSegment.Format(_T("(((uint8_t)(%s.%s>>%d)<<%d)&0x%02x)"), m_mapMessages[selected_messages[i]].strMsgName,
+							it->second.strSignalName, u8_Right_Offset, vector_SegmentInfo[k].u8_BitOffset, u8_Mask);
 					}
-
 				}
-				else if (it->second.bEndian == 0)	//Motorola Order
+				else
 				{
-					/*calculate the bit mask*/
-					u8_Mask = 0;
-					for (n = 0; n < vector_SegmentInfo[k].u8_SegmentLen; n++)
+					if (str_SignalRawType == _T("BOOL"))
 					{
-						u8_Mask |= (1 << n);
-					}
-					u8_Mask = u8_Mask << vector_SegmentInfo[k].u8_BitOffset;
-
-					if (segment_count == 0)
-					{
-						if (str_SignalRawType == _T("BOOL"))
-						{
-							str_WriteSegment.Format(_T("(((uint8_t)%s.%s<<%d)&0x%02x)"), m_mapMessages[selected_messages[i]].strMsgName, it->second.strSignalName,
-								vector_SegmentInfo[k].u8_BitOffset, u8_Mask);
-						}
-						else
-						{
-							str_WriteSegment.Format(_T("(((uint8_t)(%s.%s>>%d)<<%d)&0x%02x)"), m_mapMessages[selected_messages[i]].strMsgName,
-								it->second.strSignalName, u8_Right_Offset, vector_SegmentInfo[k].u8_BitOffset, u8_Mask);
-						}
+						str_WriteSegment.Format(_T(" | (((uint8_t)%s.%s<<%d)&0x%02x)"), m_mapMessages[selected_messages[i]].strMsgName, it->second.strSignalName,
+							vector_SegmentInfo[k].u8_BitOffset, u8_Mask);
 					}
 					else
 					{
-						if (str_SignalRawType == _T("BOOL"))
-						{
-							str_WriteSegment.Format(_T(" | (((uint8_t)%s.%s<<%d)&0x%02x)"), m_mapMessages[selected_messages[i]].strMsgName, it->second.strSignalName,
-								vector_SegmentInfo[k].u8_BitOffset, u8_Mask);
-						}
-						else
-						{
-							str_WriteSegment.Format(_T(" | (((uint8_t)(%s.%s>>%d)<<%d)&0x%02x)"), m_mapMessages[selected_messages[i]].strMsgName,
-								it->second.strSignalName, u8_Right_Offset, vector_SegmentInfo[k].u8_BitOffset, u8_Mask);
-						}
-
+						str_WriteSegment.Format(_T(" | (((uint8_t)(%s.%s>>%d)<<%d)&0x%02x)"), m_mapMessages[selected_messages[i]].strMsgName,
+							it->second.strSignalName, u8_Right_Offset, vector_SegmentInfo[k].u8_BitOffset, u8_Mask);
 					}
-				}
+
+				}			
 					
 				/*combine segment together*/
 				/*a.if it is a multiplexing signal, cache it into proper group*/
