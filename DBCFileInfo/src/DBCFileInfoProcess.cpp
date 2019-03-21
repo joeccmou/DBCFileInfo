@@ -292,7 +292,7 @@ void  DBCFileInfoProcess::AnalyzeDBCFileInfo()
 
 					SegmentInfo.u8_SegmentLen = i_RestLen<(8 - SegmentInfo.u8_BitOffset)? i_RestLen: (8 - SegmentInfo.u8_BitOffset);
 
-					i_RestLen -= SegmentInfo.u8_SegmentLen;
+					i_RestLen -= SegmentInfo.u8_SegmentLen;   //update the remain signal length
 
 					SignalInfo.mvector_SegmentInfo.push_back(SegmentInfo);
 
@@ -300,7 +300,71 @@ void  DBCFileInfoProcess::AnalyzeDBCFileInfo()
 			}
 			else if(SignalInfo.bEndian == 0) //Motorola Order
 			{
+				int i_RestLen = SignalInfo.u8Length;
+				int i_CurrentStartBit = 0;
+				int i_CurrentByte = 0;
+				int i_SignalLSB = 0;
+				int i_Tmp = 0;
+				
+				/*figure out the LSB position*/
+				i_CurrentStartBit = SignalInfo.u32StartBit;  //the start-bit is MSB
+				i_CurrentByte = i_CurrentStartBit / 8;
 
+				if (SignalInfo.u8Length == 1)
+				{
+					i_SignalLSB = i_CurrentStartBit;
+				}
+				else
+				{
+					i_Tmp = (i_CurrentStartBit % 8) + 1;  //how many bits in the current byte are available for this signal  
+					if (i_RestLen <= i_Tmp)  // this byte includes the LSB of the signal
+					{
+						i_SignalLSB = i_CurrentStartBit - i_RestLen + 1;
+					}
+					else
+					{
+						do
+						{
+							i_RestLen -= i_Tmp;							
+							i_CurrentByte++;
+							i_CurrentStartBit = i_CurrentByte * 8 + 7;
+							
+							i_Tmp = (i_CurrentStartBit % 8) + 1;  //how many bits in the current byte are available for this signal  
+							if (i_RestLen <= i_Tmp)  // this byte includes the LSB of the signal
+							{
+								i_SignalLSB = i_CurrentByte * 8 + (8 - i_RestLen);
+								break;
+							}
+
+						} while (i_RestLen > 0);
+						ASSERT(i_RestLen > 0);
+					}
+				}
+				/*calculate the segment info*/
+				i_RestLen = SignalInfo.u8Length;
+				i_CurrentStartBit = i_SignalLSB;
+				b_Flag_FirstByte = TRUE;
+				do
+				{
+					SegmentInfo.u16_ByteOffset = i_CurrentStartBit / 8;
+					if (b_Flag_FirstByte)
+					{
+						SegmentInfo.u8_BitOffset = i_CurrentStartBit % 8;
+						b_Flag_FirstByte = FALSE;
+					}
+					else
+					{
+						SegmentInfo.u8_BitOffset = 0;
+					}
+
+					SegmentInfo.u8_SegmentLen = i_RestLen<(8 - SegmentInfo.u8_BitOffset) ? i_RestLen : (8 - SegmentInfo.u8_BitOffset);
+
+					i_RestLen -= SegmentInfo.u8_SegmentLen;     //update the remain signal length
+					i_CurrentStartBit = i_CurrentStartBit - 8 -  (8 - SegmentInfo.u8_SegmentLen); //update the start bit position
+
+					SignalInfo.mvector_SegmentInfo.push_back(SegmentInfo);
+
+				} while (i_RestLen>0);
 			}
 
 			
@@ -697,7 +761,42 @@ void DBCFileInfoProcess::ReadSignal_CLanguage(vector<UINT32> selected_messages)
 			}
 			else if (it->second.bEndian == 0)	//Motorola Order
 			{
+				u8_Left_Offset = 0;
 
+				for (k = 0; k < u_Size; k++)
+				{
+					/*calculate the bit mask*/
+					u8_Mask = 0;
+					for (n = 0; n < vector_SegmentInfo[k].u8_SegmentLen; n++)
+					{
+						u8_Mask |= (1 << n);
+					}
+					u8_Mask = u8_Mask << vector_SegmentInfo[k].u8_BitOffset;
+					/*figure out one segment of the signal*/
+					if (k == 0)
+					{
+						if (str_SignalRawType == _T("BOOL"))
+						{
+							str_ReadSegment.Format(_T("(%s_buf[%d]&0x%02x)>>%d"), m_mapMessages[selected_messages[i]].strMsgName,
+								vector_SegmentInfo[k].u16_ByteOffset, u8_Mask, vector_SegmentInfo[k].u8_BitOffset);
+						}
+						else
+						{
+							str_ReadSegment.Format(_T("((%s)(%s_buf[%d]&0x%02x)>>%d)"), str_SignalRawType, m_mapMessages[selected_messages[i]].strMsgName,
+								vector_SegmentInfo[k].u16_ByteOffset, u8_Mask, vector_SegmentInfo[k].u8_BitOffset);
+							u8_Left_Offset += vector_SegmentInfo[k].u8_SegmentLen;
+						}
+					}
+					else
+					{
+						ASSERT(str_SignalRawType != _T("BOOL"));
+						str_ReadSegment.Format(_T(" | ((%s)(%s_buf[%d]&0x%02x)<<%d)"), str_SignalRawType, m_mapMessages[selected_messages[i]].strMsgName,
+							vector_SegmentInfo[k].u16_ByteOffset, u8_Mask, u8_Left_Offset);
+						u8_Left_Offset += vector_SegmentInfo[k].u8_SegmentLen;
+					}
+					/*combine the segments together*/
+					str_ReadSignal += str_ReadSegment;
+				}
 			}
 			str_ReadSignal += _T(";");
 
@@ -871,7 +970,7 @@ void DBCFileInfoProcess::WriteSignal_CLanguage(vector<UINT32> selected_messages)
 						}
 						else if (it->second.bEndian == 0)	//Motorola Order
 						{
-
+							u8_Right_Offset += vector_SegmentInfo[k - 1].u8_SegmentLen;
 						}
 					}
 					if (vector_SegmentInfo[k].u16_ByteOffset == m)
@@ -926,7 +1025,41 @@ void DBCFileInfoProcess::WriteSignal_CLanguage(vector<UINT32> selected_messages)
 				}
 				else if (it->second.bEndian == 0)	//Motorola Order
 				{
+					/*calculate the bit mask*/
+					u8_Mask = 0;
+					for (n = 0; n < vector_SegmentInfo[k].u8_SegmentLen; n++)
+					{
+						u8_Mask |= (1 << n);
+					}
+					u8_Mask = u8_Mask << vector_SegmentInfo[k].u8_BitOffset;
 
+					if (segment_count == 0)
+					{
+						if (str_SignalRawType == _T("BOOL"))
+						{
+							str_WriteSegment.Format(_T("(((uint8_t)%s.%s<<%d)&0x%02x)"), m_mapMessages[selected_messages[i]].strMsgName, it->second.strSignalName,
+								vector_SegmentInfo[k].u8_BitOffset, u8_Mask);
+						}
+						else
+						{
+							str_WriteSegment.Format(_T("(((uint8_t)(%s.%s>>%d)<<%d)&0x%02x)"), m_mapMessages[selected_messages[i]].strMsgName,
+								it->second.strSignalName, u8_Right_Offset, vector_SegmentInfo[k].u8_BitOffset, u8_Mask);
+						}
+					}
+					else
+					{
+						if (str_SignalRawType == _T("BOOL"))
+						{
+							str_WriteSegment.Format(_T(" | (((uint8_t)%s.%s<<%d)&0x%02x)"), m_mapMessages[selected_messages[i]].strMsgName, it->second.strSignalName,
+								vector_SegmentInfo[k].u8_BitOffset, u8_Mask);
+						}
+						else
+						{
+							str_WriteSegment.Format(_T(" | (((uint8_t)(%s.%s>>%d)<<%d)&0x%02x)"), m_mapMessages[selected_messages[i]].strMsgName,
+								it->second.strSignalName, u8_Right_Offset, vector_SegmentInfo[k].u8_BitOffset, u8_Mask);
+						}
+
+					}
 				}
 					
 				/*combine segment together*/
